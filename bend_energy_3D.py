@@ -3,7 +3,6 @@ import numpy as np
 # ------------------------------
 # Discrete curvature (3D)
 # ------------------------------
-import numpy as np
 
 _EPS = 1e-12
 
