@@ -42,7 +42,8 @@ def get_strain_curvature2D(node0, node1, node2):
   kb = 2.0 * np.cross(te, tf) / (1.0 + np.dot(te, tf))
 
   # Curvature
-  kappa1 = kb[2]
+  kappa1 = kb[2] # z-component for 2D bending about y-axis
+  # kappa1 = kb[1] # y-component for 2D bending about y-axis
 
   return kappa1
 
@@ -74,6 +75,8 @@ def grad_and_hess_strain_curvature2D(node0, node1, node2):
   # Unit vectors along z-axis
   m2e = np.array([0, 0, 1])
   m2f = np.array([0, 0, 1])
+
+  # # Unit vectors along y-axis
   # m2e = np.array([0, 1, 0])
   # m2f = np.array([0, 1, 0])
 
