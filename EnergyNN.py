@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from typing import Optional
 
 class EnergyNN(nn.Module):
     def __init__(self, n_in: int, hidden: int = 64, dtype=torch.float32):
@@ -43,18 +45,72 @@ class LinearElasticEnergyNN(nn.Module):
         return E
 
 
+# class LinearEnergyLayer(nn.Module):
+#     def __init__(self, n_strain: int, dtype=torch.float32):
+#         super().__init__()
+#         # One neuron, no bias; its weights are the stiffnesses
+#         self.layer = nn.Linear(n_strain, 1, bias=False, dtype=dtype)
+
+#     def forward(self, strain: torch.Tensor) -> torch.Tensor:
+#         """
+#         strain: (..., n_strain)
+#         returns scalar energy: (..., 1)
+#         """
+#         eps2 = strain**2
+#         E = 0.5 * self.layer(eps2)  # weights of layer = k_i
+#         return E
+
+
+
 class LinearEnergyLayer(nn.Module):
-    def __init__(self, n_strain: int, dtype=torch.float32):
+    def __init__(
+        self,
+        n_strain: int,
+        dtype: torch.dtype = torch.float32,
+        weights: Optional[torch.Tensor] = None,  # physical stiffness guess
+        eps: float = 1e-8,  # numerical safety
+    ):
         super().__init__()
-        # One neuron, no bias; its weights are the stiffnesses
-        self.layer = nn.Linear(n_strain, 1, bias=False, dtype=dtype)
+
+        self.n_strain = n_strain
+        self.eps = eps
+
+        # Raw (unconstrained) stiffness parameters
+        self.raw_k = nn.Parameter(torch.zeros(n_strain, dtype=dtype))
+
+        if weights is not None:
+            assert weights.shape == (n_strain,) or weights.shape == (1, n_strain)
+
+            # flatten to (n_strain,)
+            weights = weights.view(-1).to(dtype=dtype)
+
+            # inverse softplus so that softplus(raw_k) ≈ weights
+            with torch.no_grad():
+                w = weights.view(-1).to(dtype=dtype)
+                w = torch.clamp(w, min=1e-8)  # important
+                self.raw_k.copy_(self.inv_softplus(w))
+
+
+    @staticmethod
+    def inv_softplus(y, eps=1e-12):
+        # require y > 0
+        y = torch.clamp(y, min=eps)
+        # stable inverse: y + log(1 - exp(-y))
+        return y + torch.log(-torch.expm1(-y))
+
+    def stiffness(self):
+        """Physical (positive) stiffness"""
+        return F.softplus(self.raw_k) + self.eps
 
     def forward(self, strain: torch.Tensor) -> torch.Tensor:
         """
         strain: (..., n_strain)
-        returns scalar energy: (..., 1)
+        returns energy: (..., 1)
         """
-        eps2 = strain**2
-        E = 0.5 * self.layer(eps2)  # weights of layer = k_i
+        eps2 = strain ** 2                      # (..., n_strain)
+        k = self.stiffness()                    # (n_strain,)
+        E = 0.5 * torch.sum(k * eps2, dim=-1, keepdim=True)
         return E
+
+
 
