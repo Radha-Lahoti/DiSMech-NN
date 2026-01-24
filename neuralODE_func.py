@@ -136,10 +136,10 @@ class neuralODE(nn.Module):
         )  # (B,S,4)
 
         # use only stretching and bending strains to compute energy
-        strains_to_use = strains[:, :, [0,1,2]]  # (B,S,3)
+        # strains_to_use = strains[:, :, [0,1,2]]  # (B,S,3)
 
         # energy + grad wrt q_s
-        E_s = self.energy_model(strains_to_use)  # (B,S,1) or (B,S)
+        E_s = self.energy_model(strains)  # (B,S,1) or (B,S)
         (dE_dqs,) = torch.autograd.grad(E_s.sum(), q_s, create_graph=True)
         f_s = -dE_dqs  # (B,S,11)
 
