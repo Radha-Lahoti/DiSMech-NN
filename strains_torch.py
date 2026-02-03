@@ -1,6 +1,6 @@
 import torch
 
-def get_strain_stretch_edge2D_torch(nodeA, nodeB, l0, eps=1e-12):
+def get_strain_stretch_edge2D_torch(nodeA, nodeB, l0=1.0, eps=1e-12):
     """
     nodeA, nodeB: (..., D) torch tensors (D = 2 or 3).
     l0: reference length (float)
@@ -10,25 +10,35 @@ def get_strain_stretch_edge2D_torch(nodeA, nodeB, l0, eps=1e-12):
     return length / (l0 + eps) - 1.0
 
 
-def get_strain_stretch2D_torch(node0, node1, node2=None, l_0=1.0, l_1=1.0, eps=1e-12):
+def get_strain_stretch2D_torch(
+    node0,
+    node1,
+    node2,
+    l_0=1.0,
+    l_1=1.0,
+    is_boundary=None,   # bool tensor broadcastable to (...,)
+    eps=1e-12,
+):
     """
-    node0, node1, node2: (..., D) torch tensors
-    l_0, l_1: floats (reference lengths)
-
-    Returns: axial stretch at node1
+    node0, node1, node2: (..., D) tensors
+      - For boundary stencils, you may pass any dummy node2; it will be ignored.
+    l_0, l_1: float or tensor broadcastable to batch shape (...,)
+    is_boundary: bool tensor broadcastable to (...,)
+      - True  => boundary formula: 0.5*stretch_first
+      - False => interior formula: 0.5*(stretch_first+stretch_second)
     """
-    # Stretch of first edge (node0 -> node1)
     stretch_first = get_strain_stretch_edge2D_torch(node0, node1, l_0, eps)
 
-    if node2 is None:
-        # Boundary node case: only half of first-edge stretch
-        return 0.5 * stretch_first
+    # If caller doesn't provide, assume all interior (no branching)
+    if is_boundary is None:
+        stretch_second = get_strain_stretch_edge2D_torch(node1, node2, l_1, eps)
+        return 0.5 * (stretch_first + stretch_second)
 
-    # Stretch of second edge (node1 -> node2)
     stretch_second = get_strain_stretch_edge2D_torch(node1, node2, l_1, eps)
 
-    # Internal node: average of the two
-    return 0.5 * (stretch_first + stretch_second)
+    # internal branching happens *inside* this function
+    return torch.where(is_boundary, 0.5 * stretch_first, 0.5 * (stretch_first + stretch_second))
+
 
 
 def get_strain_curvature_3D_torch(node0, node1, node2, eps=1e-12):
