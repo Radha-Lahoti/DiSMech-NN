@@ -61,59 +61,15 @@ def get_strain_curvature_3D_torch(node0, node1, node2, m1e, m2e, m1f, m2f, eps=1
 
     kb = 2.0 * torch.cross(te, tf, dim=-1) / chi    # (..., 3)
 
-    # print(m1e.shape, m2e.shape, m1f.shape, m2f.shape)
-    # print("m1e:", m1e)
-    # print("m2e:", m2e)
-    # print("m1f:", m1f)
-    # print("m2f:", m2f)
-
-    # # overwrite for testing
-    # #  make m1 unit vector along z axis
-    # m1e[..., 0] = 0.0
-    # m1e[..., 1] = 0.0
-    # m1e[..., 2] = 1.0
-    # m1f[..., 0] = 0.0
-    # m1f[..., 1] = 0.0
-    # m1f[..., 2] = 1.0
-
-    # #  make m2 unit vector along y axis
-    # m2e[..., 0] = 0.0
-    # m2e[..., 1] = 1.0
-    # m2e[..., 2] = 0.0
-    # m2f[..., 0] = 0.0
-    # m2f[..., 1] = 1.0
-    # m2f[..., 2] = 0.0
-
-    # print("kb", kb.shape, kb.numel())
-    # print("m2e", m2e.shape, m2e.numel())
-    # print("m2f", m2f.shape, m2f.numel())
-    # print("m2e+m2f", (m2e+m2f).shape)
-
-    # z = torch.tensor([0., 0., 1.], device=kb.device, dtype=kb.dtype)
-    # y = torch.tensor([0., 1., 0.], device=kb.device, dtype=kb.dtype)
-
-    # m1e_t = z.expand_as(m1e)
-    # m1f_t = z.expand_as(m1f)
-    # m2e_t = y.expand_as(m2e)
-    # m2f_t = y.expand_as(m2f)
-
-    # kappa1 = 0.5 * (kb * (m2e_t + m2f_t)).sum(dim=-1)
-    # kappa2 = -0.5 * (kb * (m1e_t + m1f_t)).sum(dim=-1)
-
-    # kappa1 = 0.5 * (kb * (m2e + m2f)).sum(dim=-1)
-    # kappa2 = -0.5 * (kb * (m1e + m1f)).sum(dim=-1)
-
-
-    
     kappa1 = 0.5 * torch.einsum('...i,...i->...', kb, m2e + m2f)
     kappa2 = -0.5 * torch.einsum('...i,...i->...', kb, m1e + m1f)
 
-    # overwrite for testing
-    # kappa1 = kb[..., 1]
-    # kappa2 = torch.zeros_like(kappa1)
-
-    # torch.cuda.synchronize()
-    # print("kappa1", kappa1[:5].detach().cpu())
-    # print("kappa2", kappa2[:5].detach().cpu())
-
     return kappa1, kappa2                          # (...)
+
+def get_strain_twist_3D_torch(theta0, theta1, reftwist):
+    """
+    Returns scalar twist strain tau (...)
+    """
+    tau = reftwist + theta1 - theta0                 # (...)
+
+    return tau

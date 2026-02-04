@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from typing import Optional
+from typing import Optional, Sequence, List
 
 class Shared3LinearEnergy(nn.Module):
     """
@@ -45,3 +45,67 @@ class Shared3LinearEnergy(nn.Module):
                     0.5 * k_k2 * (kappa2 ** 2).sum(dim=-1)            # (...)
 
         return E_stretch + E_bend
+
+
+class SharedLinearEnergy(nn.Module):
+    def __init__(
+        self,
+        group_sizes: Sequence[int],
+        dtype: torch.dtype = torch.float32,
+        weights: Optional[torch.Tensor] = None,
+        eps: float = 1e-8,
+    ):
+        super().__init__()
+        self.eps = float(eps)
+
+        gs = torch.as_tensor(group_sizes, dtype=torch.long)
+        if gs.ndim != 1 or gs.numel() == 0:
+            raise ValueError("group_sizes must be a 1D non-empty sequence of ints.")
+        if (gs < 0).any():
+            raise ValueError("group_sizes must be nonnegative.")
+
+        # ✅ rename buffer to avoid collisions, and annotate
+        self._group_sizes: torch.Tensor
+        self.register_buffer("_group_sizes", gs)
+
+        n_groups = int(gs.numel())
+        self.raw_k = nn.Parameter(torch.zeros(n_groups, dtype=dtype))
+
+        if weights is not None:
+            w = torch.as_tensor(weights, dtype=dtype).view(-1)
+            if w.numel() != n_groups:
+                raise ValueError(f"weights must have numel() == {n_groups}, got {w.numel()}.")
+            with torch.no_grad():
+                w = torch.clamp(w, min=1e-8)
+                self.raw_k.copy_(self.inv_softplus(w))
+
+        self._group_sizes_list: List[int] = [int(x) for x in gs.tolist()]
+
+    @staticmethod
+    def inv_softplus(y: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+        y = torch.clamp(y, min=eps)
+        return y + torch.log(-torch.expm1(-y))
+
+    def stiffness(self) -> torch.Tensor:
+        return F.softplus(self.raw_k) + self.eps
+
+    def forward(self, strains: torch.Tensor) -> torch.Tensor:
+        if strains.ndim < 1:
+            raise ValueError("strains must have at least 1 dimension (last dim is features).")
+
+        # ✅ type checker now knows this is a Tensor
+        N_total_expected = int(self._group_sizes.sum().item())
+        if strains.shape[-1] != N_total_expected:
+            raise ValueError(
+                f"strains.shape[-1] must be {N_total_expected}, got {strains.shape[-1]}."
+            )
+
+        k = self.stiffness()
+        groups = torch.split(strains, self._group_sizes_list, dim=-1)
+
+        E = strains.new_zeros(strains.shape[:-1])
+        for g, kg in zip(groups, k):
+            if g.numel() == 0:
+                continue
+            E = E + 0.5 * kg * (g ** 2).sum(dim=-1)
+        return E
